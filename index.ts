@@ -8,6 +8,46 @@ import {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import LettaClient from "@letta-ai/letta-client";
+import { z } from "zod";
+
+// Zod schemas for input validation
+const ListAgentsSchema = z.object({
+  limit: z.number().optional(),
+});
+
+const GetAgentSchema = z.object({
+  agent_id: z.string().optional(),
+});
+
+const SendMessageSchema = z.object({
+  agent_id: z.string().optional(),
+  message: z.string({ error: "message is required" }),
+});
+
+const ListMemoryBlocksSchema = z.object({
+  agent_id: z.string().optional(),
+});
+
+const GetMemoryBlockSchema = z.object({
+  agent_id: z.string().optional(),
+  label: z.string({ error: "label is required" }),
+});
+
+const UpdateMemoryBlockSchema = z.object({
+  block_id: z.string({ error: "block_id is required" }),
+  value: z.string({ error: "value is required" }),
+});
+
+const SearchMemorySchema = z.object({
+  agent_id: z.string().optional(),
+  query: z.string({ error: "query is required" }),
+  limit: z.number().optional(),
+});
+
+const AddToArchivalSchema = z.object({
+  agent_id: z.string().optional(),
+  content: z.string({ error: "content is required" }),
+});
 
 // Environment variables
 const LETTA_API_KEY = process.env.LETTA_API_KEY;
@@ -450,33 +490,37 @@ async function main() {
     try {
       switch (name) {
         case "list_agents":
-          return await handleListAgents(args as { limit?: number });
+          return await handleListAgents(ListAgentsSchema.parse(args));
         case "get_agent":
-          return await handleGetAgent(args as { agent_id?: string });
+          return await handleGetAgent(GetAgentSchema.parse(args));
         case "send_message":
-          return await handleSendMessage(args as { agent_id?: string; message: string });
+          return await handleSendMessage(SendMessageSchema.parse(args));
         case "list_memory_blocks":
-          return await handleListMemoryBlocks(args as { agent_id?: string });
+          return await handleListMemoryBlocks(ListMemoryBlocksSchema.parse(args));
         case "get_memory_block":
-          return await handleGetMemoryBlock(args as { agent_id?: string; label: string });
+          return await handleGetMemoryBlock(GetMemoryBlockSchema.parse(args));
         case "update_memory_block":
-          return await handleUpdateMemoryBlock(args as { block_id: string; value: string });
+          return await handleUpdateMemoryBlock(UpdateMemoryBlockSchema.parse(args));
         case "search_memory":
-          return await handleSearchMemory(args as { agent_id?: string; query: string; limit?: number });
+          return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
-          return await handleAddToArchival(args as { agent_id?: string; content: string });
+          return await handleAddToArchival(AddToArchivalSchema.parse(args));
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
     } catch (error: any) {
+      const isZodError = error instanceof z.ZodError;
+      const message = isZodError
+        ? `Validation error: ${error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+        : error.message;
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify({
               error: true,
-              message: error.message,
-              details: error.body || error.toString(),
+              message,
+              details: isZodError ? error.issues : (error.body || error.toString()),
             }),
           },
         ],
