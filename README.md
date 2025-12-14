@@ -1,48 +1,50 @@
 # Letta Cloud MCP Server
 
-[Letta Cloud](https://app.letta.com) に接続するための MCP (Model Context Protocol) サーバーです。
+English | [日本語](./README_ja.md)
 
-Factory Droid、Claude Code、Cursor などの MCP 対応エージェントから Letta Cloud のステートフルメモリシステムを利用できます。
+An MCP (Model Context Protocol) server for connecting to [Letta Cloud](https://app.letta.com).
 
-## 特徴
+Use Letta Cloud's stateful memory system from MCP-compatible agents like Factory Droid, Claude Code, and Cursor.
 
-- **Letta Cloud ネイティブ対応** - セルフホスト不要、API キーのみで接続
-- **メモリブロック操作** - persona, human, project などのメモリを読み書き
-- **エージェント対話** - メッセージ送信でエージェントの学習をトリガー
-- **アーカイブメモリ** - 長期記憶の検索・追加
+## Features
 
-## インストール
+- **Native Letta Cloud Support** - No self-hosting required, connect with just an API key
+- **Memory Block Operations** - Read and write memory blocks like persona, human, project
+- **Agent Interaction** - Send messages to trigger agent learning
+- **Archival Memory** - Search and add to long-term memory
+
+## Installation
 
 ```bash
-# リポジトリをクローン
-git clone https://github.com/your-username/letta-cloud-mcp.git
+# Clone the repository
+git clone https://github.com/wasedaigo/letta-cloud-mcp.git
 cd letta-cloud-mcp
 
-# 依存関係をインストール
+# Install dependencies
 npm install
 
-# ビルド
+# Build
 npm run build
 ```
 
-### グローバルインストール（オプション）
+### Global Installation (Optional)
 
 ```bash
 npm install -g .
 ```
 
-## 設定
+## Configuration
 
-### 環境変数
+### Environment Variables
 
-| 変数名 | 必須 | 説明 |
-|--------|------|------|
-| `LETTA_API_KEY` | ✅ | Letta Cloud API キー（[取得はこちら](https://app.letta.com/api-keys)） |
-| `LETTA_DEFAULT_AGENT_ID` | - | デフォルトで使用するエージェント ID |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LETTA_API_KEY` | ✅ | Letta Cloud API key ([Get it here](https://app.letta.com/api-keys)) |
+| `LETTA_DEFAULT_AGENT_ID` | - | Default agent ID to use |
 
-### Factory Droid での設定
+### Factory Droid Configuration
 
-`~/.factory/mcp.json` または `.factory/mcp.json`:
+`~/.factory/mcp.json` or `.factory/mcp.json`:
 
 ```json
 {
@@ -60,7 +62,7 @@ npm install -g .
 }
 ```
 
-### Claude Code での設定
+### Claude Code Configuration
 
 ```bash
 claude mcp add letta-cloud \
@@ -69,7 +71,7 @@ claude mcp add letta-cloud \
   --env LETTA_DEFAULT_AGENT_ID=agent-xxx
 ```
 
-### Cursor での設定
+### Cursor Configuration
 
 `~/.cursor/mcp.json`:
 
@@ -88,68 +90,68 @@ claude mcp add letta-cloud \
 }
 ```
 
-## 利用可能なツール
+## Available Tools
 
-### エージェント管理
+### Agent Management
 
-| ツール | 説明 |
-|--------|------|
-| `list_agents` | アカウント内のエージェント一覧を取得 |
-| `get_agent` | エージェントの詳細情報を取得 |
+| Tool | Description |
+|------|-------------|
+| `list_agents` | List all agents in your account |
+| `get_agent` | Get detailed information about an agent |
 
-### メッセージング
+### Messaging
 
-| ツール | 説明 |
-|--------|------|
-| `send_message` | エージェントにメッセージを送信（学習トリガー） |
+| Tool | Description |
+|------|-------------|
+| `send_message` | Send a message to an agent (triggers learning) |
 
-### メモリブロック操作
+### Memory Block Operations
 
-| ツール | 説明 |
-|--------|------|
-| `list_memory_blocks` | エージェントのメモリブロック一覧 |
-| `get_memory_block` | 特定のメモリブロック内容を取得 |
-| `update_memory_block` | メモリブロックを直接更新 |
+| Tool | Description |
+|------|-------------|
+| `list_memory_blocks` | List memory blocks attached to an agent |
+| `get_memory_block` | Get contents of a specific memory block |
+| `update_memory_block` | Directly update a memory block |
 
-### アーカイブメモリ
+### Archival Memory
 
-| ツール | 説明 |
-|--------|------|
-| `search_memory` | アーカイブメモリを検索 |
-| `add_to_archival` | アーカイブメモリに追加 |
+| Tool | Description |
+|------|-------------|
+| `search_memory` | Search archival memory |
+| `add_to_archival` | Add content to archival memory |
 
-## 使用例
+## Usage Examples
 
-### Droid からの使用例
+### Using from Droid
 
 ```
-> Letta エージェント一覧を取得して
-(Droid が list_agents ツールを呼び出し)
+> List my Letta agents
+(Droid calls list_agents tool)
 
-> 今日学んだことを Letta に記録して：
-> ipcMain の実装で preload スクリプトの重要性を理解した
-(Droid が send_message ツールで学びを送信 → Letta が自律的にメモリ更新)
+> Save what I learned today to Letta:
+> Understood the importance of preload scripts in ipcMain implementation
+(Droid sends the learning via send_message tool → Letta autonomously updates memory)
 
-> プロジェクトのメモリブロックを確認して
-(Droid が get_memory_block ツールで project ブロックを取得)
+> Show me the project memory block
+(Droid calls get_memory_block tool for the project block)
 ```
 
-### プログラム的な使用
+### Programmatic Usage
 
 ```typescript
-// MCP クライアントから
+// From an MCP client
 await mcpClient.callTool("send_message", {
-  message: "記憶して：ESLint の設定で flat config を採用した理由は..."
+  message: "Remember: Adopted ESLint flat config because..."
 });
 
-// メモリを直接更新（外部からの注入）
+// Direct memory update (external injection)
 await mcpClient.callTool("update_memory_block", {
   block_id: "block-xxx",
-  value: "更新された内容..."
+  value: "Updated content..."
 });
 ```
 
-## アーキテクチャ
+## Architecture
 
 ```
 ┌─────────────┐     MCP Protocol     ┌──────────────────┐     REST API     ┌──────────────┐
@@ -160,38 +162,39 @@ await mcpClient.callTool("update_memory_block", {
                                      └──────────────────┘
 ```
 
-## Letta Cloud vs セルフホスト
+## Letta Cloud vs Self-Hosted
 
-| 項目 | Letta Cloud | セルフホスト |
-|------|-------------|-------------|
-| セットアップ | API キーのみ | Docker + DB |
-| 管理 | 不要 | 自分で運用 |
-| 料金 | 従量課金 | インフラ費用 |
-| この MCP | ✅ 対応 | ❌ 非対応（[oculairmedia版](https://github.com/oculairmedia/Letta-MCP-server)を使用） |
+| Aspect | Letta Cloud | Self-Hosted |
+|--------|-------------|-------------|
+| Setup | API key only | Docker + DB |
+| Management | Not required | Self-managed |
+| Pricing | Pay-as-you-go | Infrastructure costs |
+| This MCP | ✅ Supported | ❌ Not supported (use [oculairmedia version](https://github.com/oculairmedia/Letta-MCP-server)) |
 
-## トラブルシューティング
+## Troubleshooting
 
 ### "LETTA_API_KEY environment variable is required"
 
-API キーが設定されていません。[Letta Cloud](https://app.letta.com/api-keys) から取得してください。
+API key is not set. Get one from [Letta Cloud](https://app.letta.com/api-keys).
 
 ### "agent_id is required"
 
-`LETTA_DEFAULT_AGENT_ID` を設定するか、ツール呼び出し時に `agent_id` を指定してください。
+Set `LETTA_DEFAULT_AGENT_ID` or specify `agent_id` when calling tools.
 
-### 接続エラー
+### Connection Errors
 
-1. API キーが有効か確認
-2. [Letta Cloud ステータス](https://status.letta.com) を確認
-3. ネットワーク接続を確認
+1. Verify API key is valid
+2. Check [Letta Cloud Status](https://status.letta.com)
+3. Verify network connectivity
 
-## ライセンス
+## License
 
 MIT
 
-## 関連リンク
+## Related Links
 
 - [Letta Cloud](https://app.letta.com)
 - [Letta Documentation](https://docs.letta.com)
 - [Letta TypeScript SDK](https://github.com/letta-ai/letta-node)
 - [Model Context Protocol](https://modelcontextprotocol.io)
+- [日本語版 README](./README_ja.md)
