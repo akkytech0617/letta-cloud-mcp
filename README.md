@@ -112,6 +112,7 @@ claude mcp add letta-cloud \
 | `list_memory_blocks` | List memory blocks attached to an agent |
 | `get_memory_block` | Get contents of a specific memory block |
 | `update_memory_block` | Directly update a memory block |
+| `append_to_block` | Append content to a memory block without overwriting |
 
 ### Archival Memory
 

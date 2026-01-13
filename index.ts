@@ -38,6 +38,12 @@ const UpdateMemoryBlockSchema = z.object({
   value: z.string({ error: "value is required" }),
 });
 
+const AppendToBlockSchema = z.object({
+  block_id: z.string({ error: "block_id is required" }),
+  content: z.string({ error: "content is required" }),
+  separator: z.string().optional(),
+});
+
 const SearchMemorySchema = z.object({
   agent_id: z.string().optional(),
   query: z.string({ error: "query is required" }),
@@ -159,6 +165,28 @@ const tools: Tool[] = [
         },
       },
       required: ["block_id", "value"],
+    },
+  },
+  {
+    name: "append_to_block",
+    description: "Append content to an existing memory block without overwriting it. Perfect for append-only blocks like 'lessons_learned' where you want to add new entries without manually fetching and concatenating the existing content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        block_id: {
+          type: "string",
+          description: "The block ID to append to. Get this from list_memory_blocks.",
+        },
+        content: {
+          type: "string",
+          description: "The content to append to the memory block.",
+        },
+        separator: {
+          type: "string",
+          description: "Separator to use between existing content and new content (default: '\\n').",
+        },
+      },
+      required: ["block_id", "content"],
     },
   },
   {
@@ -400,6 +428,46 @@ async function handleUpdateMemoryBlock(args: { block_id: string; value: string }
   };
 }
 
+async function handleAppendToBlock(args: { block_id: string; content: string; separator?: string }) {
+  const client = getClient();
+  
+  // Retrieve the current block
+  const currentBlock = await client.blocks.retrieve(args.block_id);
+  
+  // Determine separator (default to newline)
+  const separator = args.separator !== undefined ? args.separator : "\n";
+  
+  // Append content with separator
+  const newValue = currentBlock.value + separator + args.content;
+  
+  // Update the block with the new value
+  const updatedBlock = await client.blocks.update(args.block_id, {
+    value: newValue,
+  });
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            success: true,
+            block: {
+              id: updatedBlock.id,
+              label: updatedBlock.label,
+              value: updatedBlock.value,
+            },
+            appended_content: args.content,
+            separator_used: separator,
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 async function handleSearchMemory(args: { agent_id?: string; query: string; limit?: number }) {
   const client = getClient();
   const agentId = getAgentId(args.agent_id);
@@ -501,6 +569,8 @@ async function main() {
           return await handleGetMemoryBlock(GetMemoryBlockSchema.parse(args));
         case "update_memory_block":
           return await handleUpdateMemoryBlock(UpdateMemoryBlockSchema.parse(args));
+        case "append_to_block":
+          return await handleAppendToBlock(AppendToBlockSchema.parse(args));
         case "search_memory":
           return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
