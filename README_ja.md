@@ -112,6 +112,7 @@ claude mcp add letta-cloud \
 | `list_memory_blocks` | エージェントのメモリブロック一覧 |
 | `get_memory_block` | 特定のメモリブロック内容を取得 |
 | `update_memory_block` | メモリブロックを直接更新 |
+| `append_to_block` | メモリブロックに内容を追記（上書きしない） |
 
 ### アーカイブメモリ
 
