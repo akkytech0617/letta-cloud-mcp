@@ -104,6 +104,7 @@ claude mcp add letta-cloud \
 | Tool | Description |
 |------|-------------|
 | `send_message` | Send a message to an agent (triggers learning) |
+| `get_conversation_history` | Retrieve recent message history from conversations |
 
 ### Memory Block Operations
 

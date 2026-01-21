@@ -49,6 +49,14 @@ const AddToArchivalSchema = z.object({
   content: z.string({ error: "content is required" }),
 });
 
+const GetConversationHistorySchema = z.object({
+  agent_id: z.string().optional(),
+  limit: z.number().optional(),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+});
+
 // Environment variables
 const LETTA_API_KEY = process.env.LETTA_API_KEY;
 const DEFAULT_AGENT_ID = process.env.LETTA_DEFAULT_AGENT_ID;
@@ -199,6 +207,36 @@ const tools: Tool[] = [
         },
       },
       required: ["content"],
+    },
+  },
+  {
+    name: "get_conversation_history",
+    description: "Retrieve recent message history from an agent's conversation. Useful for reviewing 'what was discussed last time' or 'what the agent learned recently'. Returns messages in chronological order.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The agent ID. If not provided, uses LETTA_DEFAULT_AGENT_ID environment variable.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of messages to return (default: 10, max: 100).",
+        },
+        before: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages before this ID.",
+        },
+        after: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages after this ID.",
+        },
+        order: {
+          type: "string",
+          enum: ["asc", "desc"],
+          description: "Sort order: 'asc' for oldest first, 'desc' for newest first (default: 'desc').",
+        },
+      },
     },
   },
 ];
@@ -464,6 +502,84 @@ async function handleAddToArchival(args: { agent_id?: string; content: string })
   };
 }
 
+async function handleGetConversationHistory(args: {
+  agent_id?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+  order?: "asc" | "desc";
+}) {
+  const client = getClient();
+  const agentId = getAgentId(args.agent_id);
+  
+  // Set defaults and limits
+  const limit = args.limit ? Math.min(args.limit, 100) : 10;
+  const order = args.order || "desc";
+  
+  // Fetch messages
+  const messagesPage = await client.agents.messages.list(agentId, {
+    limit,
+    before: args.before,
+    after: args.after,
+    order,
+  });
+  
+  // Convert page to array
+  const messages: any[] = [];
+  for await (const message of messagesPage) {
+    // Extract common fields that all message types have
+    const baseMessage: any = {
+      id: message.id,
+      message_type: message.message_type,
+      date: (message as any).date,
+    };
+    
+    // Add type-specific fields
+    if ('content' in message) {
+      baseMessage.content = message.content;
+    }
+    if ('reasoning' in message) {
+      baseMessage.reasoning = (message as any).reasoning;
+    }
+    if ('tool_call' in message) {
+      baseMessage.tool_call = (message as any).tool_call;
+    }
+    if ('tool_return' in message) {
+      baseMessage.tool_return = (message as any).tool_return;
+    }
+    if ('name' in message) {
+      baseMessage.name = (message as any).name;
+    }
+    if ('summary' in message) {
+      baseMessage.summary = (message as any).summary;
+    }
+    
+    messages.push(baseMessage);
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            agent_id: agentId,
+            count: messages.length,
+            messages,
+            pagination: {
+              limit,
+              order,
+              has_more: messages.length === limit,
+            },
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 // Main server setup
 async function main() {
   const server = new Server(
@@ -505,6 +621,8 @@ async function main() {
           return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
           return await handleAddToArchival(AddToArchivalSchema.parse(args));
+        case "get_conversation_history":
+          return await handleGetConversationHistory(GetConversationHistorySchema.parse(args));
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
