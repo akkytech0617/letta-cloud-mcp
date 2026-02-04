@@ -23,7 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@letta-ai/letta-client": "^1.6.5",
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {
