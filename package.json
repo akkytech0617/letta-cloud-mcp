@@ -24,7 +24,7 @@
   "dependencies": {
     "@letta-ai/letta-client": "^1.6.5",
     "@modelcontextprotocol/sdk": "^1.25.1",
-    "zod": "^4.1.13"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
