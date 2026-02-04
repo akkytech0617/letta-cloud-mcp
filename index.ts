@@ -502,6 +502,23 @@ async function handleAddToArchival(args: { agent_id?: string; content: string })
   };
 }
 
+function normalizeMessage(message: any): any {
+  const baseMessage: any = {
+    id: message.id,
+    message_type: message.message_type,
+    date: message.date,
+  };
+  
+  const optionalFields = ['content', 'reasoning', 'tool_call', 'tool_return', 'name', 'summary'];
+  for (const field of optionalFields) {
+    if (field in message) {
+      baseMessage[field] = message[field];
+    }
+  }
+  
+  return baseMessage;
+}
+
 async function handleGetConversationHistory(args: {
   agent_id?: string;
   limit?: number;
@@ -512,12 +529,10 @@ async function handleGetConversationHistory(args: {
   const client = getClient();
   const agentId = getAgentId(args.agent_id);
   
-  // Set defaults and limits
   const limit = args.limit ? Math.min(args.limit, 100) : 10;
-  const fetchLimit = limit < 100 ? limit + 1 : limit;
+  const fetchLimit = limit + 1;
   const order = args.order || "desc";
   
-  // Fetch messages (request one extra to detect if there are more)
   const messagesPage = await client.agents.messages.list(agentId, {
     limit: fetchLimit,
     before: args.before,
@@ -525,43 +540,13 @@ async function handleGetConversationHistory(args: {
     order,
   });
   
-  // Convert page to array with limit enforcement
   const messages: any[] = [];
   for await (const message of messagesPage) {
     if (messages.length >= fetchLimit) break;
-    
-    // Extract common fields that all message types have
-    const baseMessage: any = {
-      id: message.id,
-      message_type: message.message_type,
-      date: (message as any).date,
-    };
-    
-    // Add type-specific fields
-    if ('content' in message) {
-      baseMessage.content = message.content;
-    }
-    if ('reasoning' in message) {
-      baseMessage.reasoning = (message as any).reasoning;
-    }
-    if ('tool_call' in message) {
-      baseMessage.tool_call = (message as any).tool_call;
-    }
-    if ('tool_return' in message) {
-      baseMessage.tool_return = (message as any).tool_return;
-    }
-    if ('name' in message) {
-      baseMessage.name = (message as any).name;
-    }
-    if ('summary' in message) {
-      baseMessage.summary = (message as any).summary;
-    }
-    
-    messages.push(baseMessage);
+    messages.push(normalizeMessage(message));
   }
   
-  // Determine if there are more messages and trim to requested limit
-  const hasMore = fetchLimit > limit && messages.length > limit;
+  const hasMore = messages.length > limit;
   if (hasMore) {
     messages.length = limit;
   }
@@ -575,11 +560,7 @@ async function handleGetConversationHistory(args: {
             agent_id: agentId,
             count: messages.length,
             messages,
-            pagination: {
-              limit,
-              order,
-              has_more: hasMore,
-            },
+            pagination: { limit, order, has_more: hasMore },
           },
           null,
           2
