@@ -638,7 +638,12 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
   let summary = "";
   for (const msg of responseMessages as any[]) {
     if (msg.message_type === "assistant_message" && msg.content) {
-      summary = msg.content;
+      // Handle both string and array content types
+      if (typeof msg.content === "string") {
+        summary = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        summary = msg.content.map((c: any) => c.text || "").join("");
+      }
       break;
     }
   }
@@ -672,8 +677,9 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
   
   const created = Array.isArray(passages) ? passages[0] : passages;
   
-  // 4. Reset the memory block
-  await client.blocks.update(block.id, {
+  // 4. Reset the memory block (use agent-scoped API for consistency)
+  await client.agents.blocks.update(blockLabel, {
+    agent_id: agentId,
     value: resetValue,
   });
   
