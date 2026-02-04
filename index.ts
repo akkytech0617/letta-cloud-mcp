@@ -55,6 +55,14 @@ const AddToArchivalSchema = z.object({
   content: z.string({ error: "content is required" }),
 });
 
+const GetConversationHistorySchema = z.object({
+  agent_id: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+});
+
 // Environment variables
 const LETTA_API_KEY = process.env.LETTA_API_KEY;
 const DEFAULT_AGENT_ID = process.env.LETTA_DEFAULT_AGENT_ID;
@@ -227,6 +235,36 @@ const tools: Tool[] = [
         },
       },
       required: ["content"],
+    },
+  },
+  {
+    name: "get_conversation_history",
+    description: "Retrieve recent message history from an agent's conversation. Useful for reviewing 'what was discussed last time' or 'what the agent learned recently'. Returns messages in the requested order (default: newest first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The agent ID. If not provided, uses LETTA_DEFAULT_AGENT_ID environment variable.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of messages to return (default: 10, max: 100).",
+        },
+        before: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages before this ID.",
+        },
+        after: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages after this ID.",
+        },
+        order: {
+          type: "string",
+          enum: ["asc", "desc"],
+          description: "Sort order: 'asc' for oldest first, 'desc' for newest first (default: 'desc').",
+        },
+      },
     },
   },
 ];
@@ -532,6 +570,74 @@ async function handleAddToArchival(args: { agent_id?: string; content: string })
   };
 }
 
+function normalizeMessage(message: any): any {
+  const baseMessage: any = {
+    id: message.id,
+    message_type: message.message_type,
+    date: message.date,
+  };
+  
+  const optionalFields = ['content', 'reasoning', 'tool_call', 'tool_return', 'name', 'summary'];
+  for (const field of optionalFields) {
+    if (field in message) {
+      baseMessage[field] = message[field];
+    }
+  }
+  
+  return baseMessage;
+}
+
+async function handleGetConversationHistory(args: {
+  agent_id?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+  order?: "asc" | "desc";
+}) {
+  const client = getClient();
+  const agentId = getAgentId(args.agent_id);
+  
+  const limit = args.limit ? Math.min(args.limit, 100) : 10;
+  const fetchLimit = limit + 1;
+  const order = args.order || "desc";
+  
+  const messagesPage = await client.agents.messages.list(agentId, {
+    limit: fetchLimit,
+    before: args.before,
+    after: args.after,
+    order,
+  });
+  
+  const messages: any[] = [];
+  for await (const message of messagesPage) {
+    if (messages.length >= fetchLimit) break;
+    messages.push(normalizeMessage(message));
+  }
+  
+  const hasMore = messages.length > limit;
+  if (hasMore) {
+    messages.length = limit;
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            agent_id: agentId,
+            count: messages.length,
+            messages,
+            pagination: { limit, order, has_more: hasMore },
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 // Main server setup
 async function main() {
   const server = new Server(
@@ -575,6 +681,8 @@ async function main() {
           return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
           return await handleAddToArchival(AddToArchivalSchema.parse(args));
+        case "get_conversation_history":
+          return await handleGetConversationHistory(GetConversationHistorySchema.parse(args));
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

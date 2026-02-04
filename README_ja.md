@@ -104,6 +104,7 @@ claude mcp add letta-cloud \
 | ツール | 説明 |
 |--------|------|
 | `send_message` | エージェントにメッセージを送信（学習トリガー） |
+| `get_conversation_history` | 会話の直近のメッセージ履歴を取得 |
 
 ### メモリブロック操作
 
