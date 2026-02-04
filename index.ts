@@ -51,7 +51,7 @@ const AddToArchivalSchema = z.object({
 
 const GetConversationHistorySchema = z.object({
   agent_id: z.string().optional(),
-  limit: z.number().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
   before: z.string().optional(),
   after: z.string().optional(),
   order: z.enum(["asc", "desc"]).optional(),
@@ -211,7 +211,7 @@ const tools: Tool[] = [
   },
   {
     name: "get_conversation_history",
-    description: "Retrieve recent message history from an agent's conversation. Useful for reviewing 'what was discussed last time' or 'what the agent learned recently'. Returns messages in chronological order.",
+    description: "Retrieve recent message history from an agent's conversation. Useful for reviewing 'what was discussed last time' or 'what the agent learned recently'. Returns messages in the requested order (default: newest first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -514,19 +514,22 @@ async function handleGetConversationHistory(args: {
   
   // Set defaults and limits
   const limit = args.limit ? Math.min(args.limit, 100) : 10;
+  const fetchLimit = limit < 100 ? limit + 1 : limit;
   const order = args.order || "desc";
   
-  // Fetch messages
+  // Fetch messages (request one extra to detect if there are more)
   const messagesPage = await client.agents.messages.list(agentId, {
-    limit,
+    limit: fetchLimit,
     before: args.before,
     after: args.after,
     order,
   });
   
-  // Convert page to array
+  // Convert page to array with limit enforcement
   const messages: any[] = [];
   for await (const message of messagesPage) {
+    if (messages.length >= fetchLimit) break;
+    
     // Extract common fields that all message types have
     const baseMessage: any = {
       id: message.id,
@@ -557,6 +560,12 @@ async function handleGetConversationHistory(args: {
     messages.push(baseMessage);
   }
   
+  // Determine if there are more messages and trim to requested limit
+  const hasMore = fetchLimit > limit && messages.length > limit;
+  if (hasMore) {
+    messages.length = limit;
+  }
+  
   return {
     content: [
       {
@@ -569,7 +578,7 @@ async function handleGetConversationHistory(args: {
             pagination: {
               limit,
               order,
-              has_more: messages.length === limit,
+              has_more: hasMore,
             },
           },
           null,
