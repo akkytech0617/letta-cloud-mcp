@@ -104,6 +104,7 @@ claude mcp add letta-cloud \
 | ツール | 説明 |
 |--------|------|
 | `send_message` | エージェントにメッセージを送信（学習トリガー） |
+| `get_conversation_history` | 会話の直近のメッセージ履歴を取得 |
 
 ### メモリブロック操作
 
@@ -112,6 +113,7 @@ claude mcp add letta-cloud \
 | `list_memory_blocks` | エージェントのメモリブロック一覧 |
 | `get_memory_block` | 特定のメモリブロック内容を取得 |
 | `update_memory_block` | メモリブロックを直接更新 |
+| `append_to_block` | メモリブロックに内容を追記（上書きしない） |
 
 ### アーカイブメモリ
 

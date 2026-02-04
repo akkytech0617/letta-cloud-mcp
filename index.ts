@@ -38,6 +38,12 @@ const UpdateMemoryBlockSchema = z.object({
   value: z.string({ error: "value is required" }),
 });
 
+const AppendToBlockSchema = z.object({
+  block_id: z.string({ error: "block_id is required" }),
+  content: z.string({ error: "content is required" }),
+  separator: z.string().optional(),
+});
+
 const SearchMemorySchema = z.object({
   agent_id: z.string().optional(),
   query: z.string({ error: "query is required" }),
@@ -53,6 +59,14 @@ const SummarizeAndArchiveSchema = z.object({
   agent_id: z.string().optional(),
   block_label: z.string().optional(),
   reset_value: z.string().optional(),
+});
+
+const GetConversationHistorySchema = z.object({
+  agent_id: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  order: z.enum(["asc", "desc"]).optional(),
 });
 
 // Environment variables
@@ -168,6 +182,28 @@ const tools: Tool[] = [
     },
   },
   {
+    name: "append_to_block",
+    description: "Append content to an existing memory block without overwriting it. Perfect for append-only blocks like 'lessons_learned' where you want to add new entries without manually fetching and concatenating the existing content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        block_id: {
+          type: "string",
+          description: "The block ID to append to. Get this from list_memory_blocks.",
+        },
+        content: {
+          type: "string",
+          description: "The content to append to the memory block.",
+        },
+        separator: {
+          type: "string",
+          description: "Separator to use between existing content and new content (default: '\\n').",
+        },
+      },
+      required: ["block_id", "content"],
+    },
+  },
+  {
     name: "search_memory",
     description: "Search the agent's archival memory for relevant information. Archival memory stores historical data that doesn't fit in the context window.",
     inputSchema: {
@@ -224,6 +260,36 @@ const tools: Tool[] = [
         reset_value: {
           type: "string",
           description: "The value to reset the block to after archiving (default: empty string).",
+        },
+      },
+    },
+  },
+  {
+    name: "get_conversation_history",
+    description: "Retrieve recent message history from an agent's conversation. Useful for reviewing 'what was discussed last time' or 'what the agent learned recently'. Returns messages in the requested order (default: newest first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The agent ID. If not provided, uses LETTA_DEFAULT_AGENT_ID environment variable.",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of messages to return (default: 10, max: 100).",
+        },
+        before: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages before this ID.",
+        },
+        after: {
+          type: "string",
+          description: "Message ID for pagination - retrieve messages after this ID.",
+        },
+        order: {
+          type: "string",
+          enum: ["asc", "desc"],
+          description: "Sort order: 'asc' for oldest first, 'desc' for newest first (default: 'desc').",
         },
       },
     },
@@ -427,6 +493,46 @@ async function handleUpdateMemoryBlock(args: { block_id: string; value: string }
   };
 }
 
+async function handleAppendToBlock(args: { block_id: string; content: string; separator?: string }) {
+  const client = getClient();
+  
+  // Retrieve the current block
+  const currentBlock = await client.blocks.retrieve(args.block_id);
+  
+  // Determine separator (default to newline)
+  const separator = args.separator !== undefined ? args.separator : "\n";
+  
+  // Append content with separator
+  const newValue = currentBlock.value + separator + args.content;
+  
+  // Update the block with the new value
+  const updatedBlock = await client.blocks.update(args.block_id, {
+    value: newValue,
+  });
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            success: true,
+            block: {
+              id: updatedBlock.id,
+              label: updatedBlock.label,
+              value: updatedBlock.value,
+            },
+            appended_content: args.content,
+            separator_used: separator,
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 async function handleSearchMemory(args: { agent_id?: string; query: string; limit?: number }) {
   const client = getClient();
   const agentId = getAgentId(args.agent_id);
@@ -528,9 +634,9 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
   });
   
   // Extract the assistant's response (summary)
-  const messages = response.messages || [];
+  const responseMessages = response.messages || [];
   let summary = "";
-  for (const msg of messages as any[]) {
+  for (const msg of responseMessages as any[]) {
     if (msg.message_type === "assistant_message" && msg.content) {
       summary = msg.content;
       break;
@@ -546,7 +652,7 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
             {
               success: false,
               message: "Failed to generate summary from agent.",
-              raw_response: messages,
+              raw_response: responseMessages,
             },
             null,
             2
@@ -597,6 +703,74 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
   };
 }
 
+function normalizeMessage(message: any): any {
+  const baseMessage: any = {
+    id: message.id,
+    message_type: message.message_type,
+    date: message.date,
+  };
+  
+  const optionalFields = ['content', 'reasoning', 'tool_call', 'tool_return', 'name', 'summary'];
+  for (const field of optionalFields) {
+    if (field in message) {
+      baseMessage[field] = message[field];
+    }
+  }
+  
+  return baseMessage;
+}
+
+async function handleGetConversationHistory(args: {
+  agent_id?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+  order?: "asc" | "desc";
+}) {
+  const client = getClient();
+  const agentId = getAgentId(args.agent_id);
+  
+  const limit = args.limit ? Math.min(args.limit, 100) : 10;
+  const fetchLimit = limit + 1;
+  const order = args.order || "desc";
+  
+  const messagesPage = await client.agents.messages.list(agentId, {
+    limit: fetchLimit,
+    before: args.before,
+    after: args.after,
+    order,
+  });
+  
+  const messages: any[] = [];
+  for await (const message of messagesPage) {
+    if (messages.length >= fetchLimit) break;
+    messages.push(normalizeMessage(message));
+  }
+  
+  const hasMore = messages.length > limit;
+  if (hasMore) {
+    messages.length = limit;
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            agent_id: agentId,
+            count: messages.length,
+            messages,
+            pagination: { limit, order, has_more: hasMore },
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 // Main server setup
 async function main() {
   const server = new Server(
@@ -634,12 +808,16 @@ async function main() {
           return await handleGetMemoryBlock(GetMemoryBlockSchema.parse(args));
         case "update_memory_block":
           return await handleUpdateMemoryBlock(UpdateMemoryBlockSchema.parse(args));
+        case "append_to_block":
+          return await handleAppendToBlock(AppendToBlockSchema.parse(args));
         case "search_memory":
           return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
           return await handleAddToArchival(AddToArchivalSchema.parse(args));
         case "summarize_and_archive":
           return await handleSummarizeAndArchive(SummarizeAndArchiveSchema.parse(args));
+        case "get_conversation_history":
+          return await handleGetConversationHistory(GetConversationHistorySchema.parse(args));
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
