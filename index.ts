@@ -657,7 +657,6 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
             {
               success: false,
               message: "Failed to generate summary from agent.",
-              raw_response: responseMessages,
             },
             null,
             2
@@ -668,20 +667,29 @@ async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?
     };
   }
   
-  // 3. Add summary to archival memory with metadata
-  const archiveContent = `[Archived from '${blockLabel}' at ${new Date().toISOString()}]\n\n${summary}`;
-  
-  const passages = await client.agents.passages.create(agentId, {
-    text: archiveContent,
-  });
-  
-  const created = Array.isArray(passages) ? passages[0] : passages;
-  
-  // 4. Reset the memory block (use agent-scoped API for consistency)
+  // 3. Reset the memory block first (can be restored if archive fails)
   await client.agents.blocks.update(blockLabel, {
     agent_id: agentId,
     value: resetValue,
   });
+  
+  // 4. Add summary to archival memory with metadata (rollback on failure)
+  const archiveContent = `[Archived from '${blockLabel}' at ${new Date().toISOString()}]\n\n${summary}`;
+  
+  let created: any;
+  try {
+    const passages = await client.agents.passages.create(agentId, {
+      text: archiveContent,
+    });
+    created = Array.isArray(passages) ? passages[0] : passages;
+  } catch (archiveError) {
+    // Rollback: restore original content
+    await client.agents.blocks.update(blockLabel, {
+      agent_id: agentId,
+      value: originalContent,
+    });
+    throw archiveError;
+  }
   
   return {
     content: [
