@@ -55,6 +55,12 @@ const AddToArchivalSchema = z.object({
   content: z.string({ error: "content is required" }),
 });
 
+const SummarizeAndArchiveSchema = z.object({
+  agent_id: z.string().optional(),
+  block_label: z.string().optional(),
+  reset_value: z.string().optional(),
+});
+
 const GetConversationHistorySchema = z.object({
   agent_id: z.string().optional(),
   limit: z.number().int().min(1).max(100).optional(),
@@ -235,6 +241,27 @@ const tools: Tool[] = [
         },
       },
       required: ["content"],
+    },
+  },
+  {
+    name: "summarize_and_archive",
+    description: "Summarize a memory block (default: 'current_work') and archive it. This tool retrieves the block content, sends it to the agent for summarization, stores the summary in archival memory, and resets the block. Useful for archiving long session work at the end of a session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_id: {
+          type: "string",
+          description: "The agent ID. If not provided, uses LETTA_DEFAULT_AGENT_ID environment variable.",
+        },
+        block_label: {
+          type: "string",
+          description: "The label of the memory block to summarize and archive (default: 'current_work').",
+        },
+        reset_value: {
+          type: "string",
+          description: "The value to reset the block to after archiving (default: empty string).",
+        },
+      },
     },
   },
   {
@@ -570,6 +597,126 @@ async function handleAddToArchival(args: { agent_id?: string; content: string })
   };
 }
 
+async function handleSummarizeAndArchive(args: { agent_id?: string; block_label?: string; reset_value?: string }) {
+  const client = getClient();
+  const agentId = getAgentId(args.agent_id);
+  const blockLabel = args.block_label || "current_work";
+  const resetValue = args.reset_value ?? "";
+  
+  // 1. Get the memory block content
+  const block = await client.agents.blocks.retrieve(blockLabel, { agent_id: agentId });
+  
+  if (!block.value || block.value.trim() === "") {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              success: false,
+              message: `Memory block '${blockLabel}' is empty. Nothing to archive.`,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+  
+  const originalContent = block.value;
+  
+  // 2. Send message to agent to summarize the content
+  const summarizePrompt = `Please summarize the following content concisely for archival purposes. Focus on key decisions, outcomes, and important information. Respond with ONLY the summary, no preamble:\n\n---\n${originalContent}\n---`;
+  
+  const response = await client.agents.messages.create(agentId, {
+    messages: [{ role: "user", content: summarizePrompt }],
+  });
+  
+  // Extract the assistant's response (summary)
+  const responseMessages = response.messages || [];
+  let summary = "";
+  for (const msg of responseMessages as any[]) {
+    if (msg.message_type === "assistant_message" && msg.content) {
+      // Handle both string and array content types
+      if (typeof msg.content === "string") {
+        summary = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        summary = msg.content.map((c: any) => c.text || "").join("");
+      }
+      break;
+    }
+  }
+  
+  if (!summary) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              success: false,
+              message: "Failed to generate summary from agent.",
+            },
+            null,
+            2
+          ),
+        },
+      ],
+      isError: true,
+    };
+  }
+  
+  // 3. Reset the memory block first (can be restored if archive fails)
+  await client.agents.blocks.update(blockLabel, {
+    agent_id: agentId,
+    value: resetValue,
+  });
+  
+  // 4. Add summary to archival memory with metadata (rollback on failure)
+  const archiveContent = `[Archived from '${blockLabel}' at ${new Date().toISOString()}]\n\n${summary}`;
+  
+  let created: any;
+  try {
+    const passages = await client.agents.passages.create(agentId, {
+      text: archiveContent,
+    });
+    created = Array.isArray(passages) ? passages[0] : passages;
+  } catch (archiveError) {
+    // Rollback: restore original content
+    await client.agents.blocks.update(blockLabel, {
+      agent_id: agentId,
+      value: originalContent,
+    });
+    throw archiveError;
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            success: true,
+            block_label: blockLabel,
+            original_length: originalContent.length,
+            summary_length: summary.length,
+            summary: summary,
+            archived_passage: {
+              id: created?.id,
+              text: archiveContent,
+              created_at: created?.created_at,
+            },
+            block_reset_to: resetValue,
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
 function normalizeMessage(message: any): any {
   const baseMessage: any = {
     id: message.id,
@@ -681,6 +828,8 @@ async function main() {
           return await handleSearchMemory(SearchMemorySchema.parse(args));
         case "add_to_archival":
           return await handleAddToArchival(AddToArchivalSchema.parse(args));
+        case "summarize_and_archive":
+          return await handleSummarizeAndArchive(SummarizeAndArchiveSchema.parse(args));
         case "get_conversation_history":
           return await handleGetConversationHistory(GetConversationHistorySchema.parse(args));
         default:
